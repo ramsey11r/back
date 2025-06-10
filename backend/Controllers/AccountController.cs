@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.SignalR;
 using System.Linq;
+using System.Reflection.PortableExecutable;
 
 namespace backend.Controllers
 {
@@ -128,24 +129,38 @@ namespace backend.Controllers
                 {
                     await con.OpenAsync();
 
-                    var query = "SELECT COUNT(*) FROM dbo.login WHERE email = @Email AND password = @Password";
-                    using (var cmd = new SqlCommand(query, con))
+                    // First, check login table
+                    var loginQuery = "SELECT role FROM dbo.login WHERE email = @Email AND password = @Password";
+                    using (var cmd = new SqlCommand(loginQuery, con))
                     {
                         cmd.Parameters.AddWithValue("@Email", credentials.email);
                         cmd.Parameters.AddWithValue("@Password", credentials.password);
 
-                        int userExists = (int)await cmd.ExecuteScalarAsync();
+                        var role = await cmd.ExecuteScalarAsync();
 
-                        if (userExists > 0)
+                        if (role != null)
                         {
-                            
-                            return Ok(true);
-                        }
-                        else
-                        {
-                            return Unauthorized(new { Message = "Invalid email or password." });
+                            return Ok(new { Message = "Login successful", Role = role.ToString() });
                         }
                     }
+
+                    // If not found in login, check expert table
+                    var expertQuery = "SELECT role FROM dbo.expert WHERE email = @Email AND password = @Password";
+                    using (var cmdExpert = new SqlCommand(expertQuery, con))
+                    {
+                        cmdExpert.Parameters.AddWithValue("@Email", credentials.email);
+                        cmdExpert.Parameters.AddWithValue("@Password", credentials.password);
+
+                        var expertRole = await cmdExpert.ExecuteScalarAsync();
+
+                        if (expertRole != null)
+                        {
+                            return Ok(new { Message = "Login successful", Role = expertRole.ToString() });
+                        }
+                    }
+
+                    // If not found in either table
+                    return Unauthorized(new { Message = "Invalid email or password." });
                 }
             }
             catch (Exception ex)
@@ -153,5 +168,7 @@ namespace backend.Controllers
                 return StatusCode(500, new { Message = "Internal server error", Error = ex.Message });
             }
         }
+
+
     }
 }

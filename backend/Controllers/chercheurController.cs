@@ -3,10 +3,15 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
+using Microsoft.ML.Data;
+using Microsoft.ML;
 using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
+using System.IO;
+using System.Text;
 
 namespace backend.Controllers
 {
@@ -52,6 +57,8 @@ namespace backend.Controllers
                 Competences = row["Competences"]?.ToString(),
                 Expertise = row["Expertise"]?.ToString(),
                 Laboratoire_de_recherche = row["Laboratoire_de_recherche"]?.ToString(),
+                cv = row["cv"]?.ToString(),
+
 
             }).ToList();
 
@@ -59,7 +66,7 @@ namespace backend.Controllers
         }
 
         [HttpPost("Add_Chercheur")]
-        public async Task<IActionResult> AddChercheur([FromBody] chercheurs log)
+        public async Task<IActionResult> AddChercheur([FromForm] chercheurs log, [FromForm] IFormFile cv)
         {
 
             try
@@ -68,7 +75,27 @@ namespace backend.Controllers
                 {
                     await con.OpenAsync();
 
-                    var insertQuery = "INSERT INTO dbo.CHERCHEURS (Nom_prenom, fonction,specialite,Mail,telephone,Mots_cles,titre_dhabilitation_universitaire,Titre_de_these,Competences,Expertise,Laboratoire_de_recherche) VALUES (@Nom_prenom, @fonction , @specialite ,@Mail , @telephone , @Mots_cles , @titre_dhabilitation_universitaire,@Titre_de_these,@Competences,@Expertise,@Laboratoire_de_recherche)";
+                    
+                    string fileName = null;
+                    string OriginalFileName = null;
+                    if (cv != null && cv.Length > 0)
+                    {
+                        var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "cv");
+                        if (!Directory.Exists(uploadsFolder))
+                            Directory.CreateDirectory(uploadsFolder);
+
+                        fileName = Guid.NewGuid().ToString() + Path.GetExtension(cv.FileName);
+
+                        OriginalFileName = cv.FileName;
+                        var filePath = Path.Combine(uploadsFolder, cv.FileName);
+
+                        using (var fileStream = new FileStream(filePath, FileMode.Create))
+                        {
+                            await cv.CopyToAsync(fileStream);
+                        }
+                    }
+
+                    var insertQuery = "INSERT INTO dbo.CHERCHEURS (Nom_prenom, fonction,specialite,Mail,telephone,Mots_cles,titre_dhabilitation_universitaire,Titre_de_these,Competences,Expertise,Laboratoire_de_recherche , cv) VALUES (@Nom_prenom, @fonction , @specialite ,@Mail , @telephone , @Mots_cles , @titre_dhabilitation_universitaire,@Titre_de_these,@Competences,@Expertise,@Laboratoire_de_recherche , @cv)";
                     using (var insertCmd = new SqlCommand(insertQuery, con))
                     {
                         insertCmd.Parameters.AddWithValue("@Nom_prenom", log.Nom_prenom);
@@ -82,6 +109,9 @@ namespace backend.Controllers
                         insertCmd.Parameters.AddWithValue("@Competences", log.Competences);
                         insertCmd.Parameters.AddWithValue("@Expertise", log.Expertise);
                         insertCmd.Parameters.AddWithValue("@Laboratoire_de_recherche", log.Laboratoire_de_recherche);
+                        insertCmd.Parameters.AddWithValue("@cv", (object)OriginalFileName ?? DBNull.Value);
+
+
 
 
 
@@ -105,8 +135,42 @@ namespace backend.Controllers
             }
         }
 
+
+
+        [HttpGet("cv/{fileName}")]
+        public IActionResult GetCV(string fileName)
+        {
+            try
+            {
+                var folderPath = Path.Combine(Directory.GetCurrentDirectory(), "cv");
+                var filePath = Path.Combine(folderPath, fileName);
+
+                if (!System.IO.File.Exists(filePath))
+                {
+                    return NotFound(new { message = "CV file not found." });
+                }
+
+                var extension = Path.GetExtension(fileName).ToLowerInvariant();
+                var contentType = extension switch
+                {
+                    ".pdf" => "application/pdf",
+                    ".doc" => "application/msword",
+                    ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    _ => "application/octet-stream"
+                };
+
+                var fileBytes = System.IO.File.ReadAllBytes(filePath);
+                return File(fileBytes, contentType);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error while retrieving CV", error = ex.Message });
+            }
+        }
+
+
         [HttpPut("Update_chercheur")]
-        public async Task<IActionResult> UpdateChercheur([FromBody] chercheurs c)
+        public async Task<IActionResult> UpdateChercheur([FromForm] chercheurs c, [FromForm] IFormFile cv)
         {
             try
             {
@@ -114,7 +178,27 @@ namespace backend.Controllers
                 {
                     await con.OpenAsync();
 
-                    var updateQuery = @"
+                    string fileName = null;
+                    string OriginalFileName = null;
+
+                    if (cv != null && cv.Length > 0)
+                    {
+                        var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "cv");
+                        if (!Directory.Exists(uploadsFolder))
+                            Directory.CreateDirectory(uploadsFolder);
+
+                        fileName = Guid.NewGuid().ToString() + Path.GetExtension(cv.FileName);
+                        OriginalFileName = cv.FileName;
+                        var filePath = Path.Combine(uploadsFolder, fileName);
+
+                        using (var fileStream = new FileStream(filePath, FileMode.Create))
+                        {
+                            await cv.CopyToAsync(fileStream);
+                        }
+                    }
+
+                    // Build the SQL query dynamically
+                    var updateQuery = new StringBuilder(@"
                 UPDATE dbo.CHERCHEURS
                 SET 
                     Nom_prenom = @Nom_prenom,
@@ -127,11 +211,16 @@ namespace backend.Controllers
                     Titre_de_these = @Titre_de_these,
                     Competences = @Competences,
                     Expertise = @Expertise,
-                    Laboratoire_de_recherche = @Laboratoire_de_recherche
+                    Laboratoire_de_recherche = @Laboratoire_de_recherche");
 
-                WHERE id = @id";
+                    if (OriginalFileName != null)
+                    {
+                        updateQuery.Append(", cv = @cv");
+                    }
 
-                    using (var updateCmd = new SqlCommand(updateQuery, con))
+                    updateQuery.Append(" WHERE id = @id");
+
+                    using (var updateCmd = new SqlCommand(updateQuery.ToString(), con))
                     {
                         updateCmd.Parameters.AddWithValue("@id", c.id);
                         updateCmd.Parameters.AddWithValue("@Nom_prenom", c.Nom_prenom);
@@ -146,16 +235,19 @@ namespace backend.Controllers
                         updateCmd.Parameters.AddWithValue("@Expertise", c.Expertise);
                         updateCmd.Parameters.AddWithValue("@Laboratoire_de_recherche", c.Laboratoire_de_recherche);
 
-
+                        if (OriginalFileName != null)
+                        {
+                            updateCmd.Parameters.AddWithValue("@cv", OriginalFileName);
+                        }
 
                         int result = await updateCmd.ExecuteNonQueryAsync();
 
                         if (result > 0)
                         {
-                            return Ok(new { Message = "CHERCHEURS updated successfully." });
+                            return Ok(new { Message = "CHERCHEUR updated successfully." });
                         }
 
-                        return NotFound(new { Message = "CHERCHEURS not found or update failed." });
+                        return NotFound(new { Message = "CHERCHEUR not found or update failed." });
                     }
                 }
             }
@@ -194,6 +286,91 @@ namespace backend.Controllers
             {
                 return StatusCode(500, new { Message = "Internal server error", Error = ex.Message });
             }
+        }
+
+
+        [HttpPost("match-chercheur")]
+        public async Task<JsonResult> MatchChercheur([FromBody] MatchRequest request)
+        {
+            string query = "SELECT * FROM dbo.CHERCHEURS";
+            DataTable table = new DataTable();
+            string sqlDataSource = _configuration.GetConnectionString("dbConn");
+
+            using (SqlConnection myCon = new SqlConnection(sqlDataSource))
+            {
+                await myCon.OpenAsync();
+                using (SqlCommand myCommand = new SqlCommand(query, myCon))
+                using (SqlDataReader myReader = await myCommand.ExecuteReaderAsync())
+                {
+                    table.Load(myReader);
+                }
+            }
+
+            var candidates = table.AsEnumerable().Select(row => new {
+                Id = Convert.ToInt32(row["id"]),
+                Text = $"{row["fonction"]} {row["specialite"]} {row["Mots_cles"]} {row["Competences"]} {row["Expertise"]}"
+             .ToLowerInvariant()
+            }).ToList();
+
+            var ranked = RankCandidatesWithMLNET(request.ProfileText.ToLowerInvariant(), candidates.Cast<dynamic>().ToList());
+            return new JsonResult(ranked.OrderByDescending(x => x.Score).Take(3));
+        }
+
+        private List<CandidateWithScore> RankCandidatesWithMLNET(string companyText, List<dynamic> candidates)
+        {
+            var mlContext = new MLContext();
+
+            // Build the list of candidate + company input
+            var allInputs = candidates.Select(c => new CandidateInput { Text = c.Text }).ToList();
+            allInputs.Insert(0, new CandidateInput { Text = companyText });
+
+            var dataView = mlContext.Data.LoadFromEnumerable(allInputs);
+
+            // Apply text transformation pipeline:
+            // FeaturizeText performs both normalization (e.g., lowercasing, removing punctuation, tokenization)
+            // and encoding (using TF-IDF vectorization).
+            var pipeline = mlContext.Transforms.Text.FeaturizeText("Features", nameof(CandidateInput.Text));
+            var model = pipeline.Fit(dataView);
+            var transformedData = model.Transform(dataView);
+
+            // Extract vectors
+            var featureColumn = transformedData.GetColumn<VBuffer<float>>(transformedData.Schema["Features"]);
+
+            var allVectors = featureColumn.Select(v => v.DenseValues().ToArray()).ToList();
+
+            var companyVector = allVectors[0];
+
+            var results = new List<CandidateWithScore>();
+
+            for (int i = 1; i < allVectors.Count; i++)
+            {
+                float score = CosineSimilarity(companyVector, allVectors[i]);
+
+                results.Add(new CandidateWithScore
+                {
+                    Id = candidates[i - 1].Id,
+                    Text = candidates[i - 1].Text,
+                    Score = score
+                });
+            }
+
+            return results;
+        }
+
+        private float CosineSimilarity(float[] vecA, float[] vecB)
+        {
+            float dot = 0;
+            float normA = 0;
+            float normB = 0;
+
+            for (int i = 0; i < vecA.Length; i++)
+            {
+                dot += vecA[i] * vecB[i];
+                normA += vecA[i] * vecA[i];
+                normB += vecB[i] * vecB[i];
+            }
+
+            return dot / (float)(Math.Sqrt(normA) * Math.Sqrt(normB) + 1e-10);
         }
     }
 }

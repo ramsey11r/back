@@ -68,7 +68,7 @@ namespace backend
 
             app.UseRouting();
             app.UseHttpsRedirection();
-
+            app.UseStaticFiles();
             app.UseAuthorization();
 
             app.UseEndpoints(endpoints =>

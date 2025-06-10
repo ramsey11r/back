@@ -10,6 +10,8 @@ using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
+using System.IO;
+using System.Text;
 
 
 namespace backend.Controllers
@@ -53,6 +55,12 @@ namespace backend.Controllers
                 Email = row["Email"]?.ToString(),
                 Certifications_clés = row["Certifications_clés"]?.ToString(),
                 Formation_principale = row["Formation_principale"]?.ToString(),
+                role = row["role"]?.ToString(),
+                password = row["password"]?.ToString(),
+                cv = row["cv"]?.ToString(),
+
+
+
             }).ToList();
 
             return new JsonResult(actes);
@@ -61,26 +69,65 @@ namespace backend.Controllers
 
 
         [HttpPost("Add_Expert")]
-        public async Task<IActionResult> AddExpert([FromBody] Expert log)
+        public async Task<IActionResult> AddExpert([FromForm] Expert log, [FromForm] IFormFile cv)
         {
-        
-         try
+            try
             {
                 using (var con = new SqlConnection(_configuration.GetConnectionString("dbConn")))
                 {
                     await con.OpenAsync();
-                 
-                    var insertQuery = "INSERT INTO dbo.expert (Nom_et_prénom, Domaine_dexpertise,Années_dexpérience,Téléphone,Email,Certifications_clés,Formation_principale) VALUES (@Nom_et_prénom, @Domaine_dexpertise , @Annee_exp ,@Téléphone , @Email , @Certifications_clés , @Formation_principale)";
+
+                    // Check if the email already exists
+                    var checkEmailQuery = "SELECT COUNT(*) FROM dbo.expert WHERE Email = @Email";
+                    using (var checkCmd = new SqlCommand(checkEmailQuery, con))
+                    {
+                        checkCmd.Parameters.AddWithValue("@Email", log.Email);
+                        int emailExists = (int)await checkCmd.ExecuteScalarAsync();
+                        if (emailExists > 0)
+                        {
+                            return Conflict(new { message = "Email already exists." });
+                        }
+                    }
+
+                    // Handle file upload
+                    string fileName = null;
+                    string OriginalFileName = null;
+                    if (cv != null && cv.Length > 0)
+                    {
+                        var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(),"cv");
+                        if (!Directory.Exists(uploadsFolder))
+                            Directory.CreateDirectory(uploadsFolder);
+
+                        fileName = Guid.NewGuid().ToString() + Path.GetExtension(cv.FileName);
+
+                         OriginalFileName = cv.FileName;
+                        var filePath = Path.Combine(uploadsFolder, cv.FileName);
+
+                        using (var fileStream = new FileStream(filePath, FileMode.Create))
+                        {
+                            await cv.CopyToAsync(fileStream);
+                        }
+                    }
+
+                
+                    var insertQuery = @"
+                INSERT INTO dbo.expert 
+                    (Nom_et_prénom, Domaine_dexpertise, Années_dexpérience, Téléphone, Email, Certifications_clés, Formation_principale, role, password , cv) 
+                VALUES 
+                    (@Nom_et_prénom, @Domaine_dexpertise, @Annee_exp, @Téléphone, @Email, @Certifications_clés, @Formation_principale, @role, @password , @cv)";
+
                     using (var insertCmd = new SqlCommand(insertQuery, con))
                     {
                         insertCmd.Parameters.AddWithValue("@Nom_et_prénom", log.Nom_et_prénom);
                         insertCmd.Parameters.AddWithValue("@Domaine_dexpertise", log.Domaine_dexpertise);
-                        insertCmd.Parameters.AddWithValue("@Années_dexpérience", log.Années_dexpérience);
+                        insertCmd.Parameters.AddWithValue("@Annee_exp", log.Années_dexpérience);
                         insertCmd.Parameters.AddWithValue("@Téléphone", log.Téléphone);
                         insertCmd.Parameters.AddWithValue("@Email", log.Email);
                         insertCmd.Parameters.AddWithValue("@Certifications_clés", log.Certifications_clés);
                         insertCmd.Parameters.AddWithValue("@Formation_principale", log.Formation_principale);
-
+                        insertCmd.Parameters.AddWithValue("@role", log.role);
+                        insertCmd.Parameters.AddWithValue("@password", log.password);
+                        insertCmd.Parameters.AddWithValue("@cv", (object)OriginalFileName ?? DBNull.Value); 
 
                         int result = await insertCmd.ExecuteNonQueryAsync();
 
@@ -99,8 +146,40 @@ namespace backend.Controllers
             }
         }
 
+        [HttpGet("cv/{fileName}")]
+        public IActionResult GetCV(string fileName)
+        {
+            try
+            {
+                var folderPath = Path.Combine(Directory.GetCurrentDirectory(), "cv");
+                var filePath = Path.Combine(folderPath, fileName);
+
+                if (!System.IO.File.Exists(filePath))
+                {
+                    return NotFound(new { message = "CV file not found." });
+                }
+
+                var extension = Path.GetExtension(fileName).ToLowerInvariant();
+                var contentType = extension switch
+                {
+                    ".pdf" => "application/pdf",
+                    ".doc" => "application/msword",
+                    ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    _ => "application/octet-stream"
+                };
+
+                var fileBytes = System.IO.File.ReadAllBytes(filePath);
+                return File(fileBytes, contentType);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error while retrieving CV", error = ex.Message });
+            }
+        }
+
         [HttpPut("Update_Expert")]
-        public async Task<IActionResult> UpdateExpert([FromBody] Expert expert)
+        public async Task<IActionResult> UpdateExpert([FromForm] Expert expert, [FromForm] IFormFile cv)
+
         {
             try
             {
@@ -108,8 +187,28 @@ namespace backend.Controllers
                 {
                     await con.OpenAsync();
 
-                    var updateQuery = @"
-                UPDATE dbo.expert
+                    string fileName = null;
+                    string OriginalFileName = null;
+
+                    if (cv != null && cv.Length > 0)
+                    {
+                        var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "cv");
+                        if (!Directory.Exists(uploadsFolder))
+                            Directory.CreateDirectory(uploadsFolder);
+
+                        fileName = Guid.NewGuid().ToString() + Path.GetExtension(cv.FileName);
+                        OriginalFileName = cv.FileName;
+                        var filePath = Path.Combine(uploadsFolder, fileName);
+
+                        using (var fileStream = new FileStream(filePath, FileMode.Create))
+                        {
+                            await cv.CopyToAsync(fileStream);
+                        }
+                    }
+
+                    var updateQuery = new StringBuilder(@"
+
+              UPDATE dbo.expert
                 SET 
                     Nom_et_prénom = @Nom_et_prénom,
                     Domaine_dexpertise = @Domaine_dexpertise,
@@ -117,10 +216,18 @@ namespace backend.Controllers
                     Téléphone = @Téléphone,
                     Email = @Email,
                     Certifications_clés = @Certifications_clés,
-                    Formation_principale = @Formation_principale
-                WHERE Id = @Id";
+                    Formation_principale = @Formation_principale,
+                    password = @password");
+      
 
-                    using (var updateCmd = new SqlCommand(updateQuery, con))
+                    if (OriginalFileName != null)
+                    {
+                        updateQuery.Append(", cv = @cv");
+                    }
+
+                    updateQuery.Append(" WHERE Id = @Id");
+
+                    using (var updateCmd = new SqlCommand(updateQuery.ToString(), con))
                     {
                         updateCmd.Parameters.AddWithValue("@Id", expert.Id);
                         updateCmd.Parameters.AddWithValue("@Nom_et_prénom", expert.Nom_et_prénom);
@@ -130,6 +237,12 @@ namespace backend.Controllers
                         updateCmd.Parameters.AddWithValue("@Email", expert.Email);
                         updateCmd.Parameters.AddWithValue("@Certifications_clés", expert.Certifications_clés);
                         updateCmd.Parameters.AddWithValue("@Formation_principale", expert.Formation_principale);
+                        updateCmd.Parameters.AddWithValue("@password", expert.password);
+
+                        if (OriginalFileName != null)
+                        {
+                            updateCmd.Parameters.AddWithValue("@cv", OriginalFileName);
+                        }
 
                         int result = await updateCmd.ExecuteNonQueryAsync();
 

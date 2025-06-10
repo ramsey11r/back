@@ -14,6 +14,7 @@
         public string Competences { get; set; }
         public string Expertise { get; set; }
         public string Laboratoire_de_recherche { get; set; }
+        public string cv { get; set; }
 
     }
 }
