@@ -189,7 +189,7 @@ namespace backend.Controllers
 
                         fileName = Guid.NewGuid().ToString() + Path.GetExtension(cv.FileName);
                         OriginalFileName = cv.FileName;
-                        var filePath = Path.Combine(uploadsFolder, fileName);
+                        var filePath = Path.Combine(uploadsFolder, OriginalFileName);
 
                         using (var fileStream = new FileStream(filePath, FileMode.Create))
                         {
@@ -223,17 +223,18 @@ namespace backend.Controllers
                     using (var updateCmd = new SqlCommand(updateQuery.ToString(), con))
                     {
                         updateCmd.Parameters.AddWithValue("@id", c.id);
-                        updateCmd.Parameters.AddWithValue("@Nom_prenom", c.Nom_prenom);
-                        updateCmd.Parameters.AddWithValue("@fonction", c.fonction);
-                        updateCmd.Parameters.AddWithValue("@specialite", c.specialite);
-                        updateCmd.Parameters.AddWithValue("@Mail", c.Mail);
-                        updateCmd.Parameters.AddWithValue("@telephone", c.telephone);
-                        updateCmd.Parameters.AddWithValue("@Mots_cles", c.Mots_cles);
-                        updateCmd.Parameters.AddWithValue("@titre_dhabilitation_universitaire", c.titre_dhabilitation_universitaire);
-                        updateCmd.Parameters.AddWithValue("@Titre_de_these", c.Titre_de_these);
-                        updateCmd.Parameters.AddWithValue("@Competences", c.Competences);
-                        updateCmd.Parameters.AddWithValue("@Expertise", c.Expertise);
-                        updateCmd.Parameters.AddWithValue("@Laboratoire_de_recherche", c.Laboratoire_de_recherche);
+                        updateCmd.Parameters.AddWithValue("@Nom_prenom", c.Nom_prenom ?? (object)DBNull.Value);
+                        updateCmd.Parameters.AddWithValue("@fonction", c.fonction ?? (object)DBNull.Value);
+                        updateCmd.Parameters.AddWithValue("@specialite", c.specialite ?? (object)DBNull.Value);
+                        updateCmd.Parameters.AddWithValue("@Mail", c.Mail ?? (object)DBNull.Value);
+                        updateCmd.Parameters.AddWithValue("@telephone", c.telephone ?? (object)DBNull.Value);
+                        updateCmd.Parameters.AddWithValue("@Mots_cles", c.Mots_cles ?? (object)DBNull.Value);
+                        updateCmd.Parameters.AddWithValue("@titre_dhabilitation_universitaire", c.titre_dhabilitation_universitaire ?? (object)DBNull.Value);
+                        updateCmd.Parameters.AddWithValue("@Titre_de_these", c.Titre_de_these ?? (object)DBNull.Value);
+                        updateCmd.Parameters.AddWithValue("@Competences", c.Competences ?? (object)DBNull.Value);
+                        updateCmd.Parameters.AddWithValue("@Expertise", c.Expertise ?? (object)DBNull.Value);
+                        updateCmd.Parameters.AddWithValue("@Laboratoire_de_recherche", c.Laboratoire_de_recherche ?? (object)DBNull.Value);
+
 
                         if (OriginalFileName != null)
                         {
