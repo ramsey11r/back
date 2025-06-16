@@ -12,5 +12,6 @@
         public string solution { get; set; }
         public string priorite { get; set; }
         public string wassimramzi123 { get; set; }
+        public string hilmi { get; set; }
     }
 }
