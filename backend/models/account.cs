@@ -11,6 +11,7 @@
         public string besoin { get; set; }
         public string solution { get; set; }
         public string priorite { get; set; }
-        public string ramzifgfg { get; set; }
+        public string supermarcher { get; set; }
+
     }
 }
