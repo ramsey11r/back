@@ -198,7 +198,7 @@ namespace backend.Controllers
 
                         fileName = Guid.NewGuid().ToString() + Path.GetExtension(cv.FileName);
                         OriginalFileName = cv.FileName;
-                        var filePath = Path.Combine(uploadsFolder, fileName);
+                        var filePath = Path.Combine(uploadsFolder, OriginalFileName);
 
                         using (var fileStream = new FileStream(filePath, FileMode.Create))
                         {
