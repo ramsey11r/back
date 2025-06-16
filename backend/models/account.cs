@@ -11,7 +11,7 @@
         public string besoin { get; set; }
         public string solution { get; set; }
         public string priorite { get; set; }
-        public string rrfff { get; set; }
+        public string rrfggtff { get; set; }
         
     }
 }
